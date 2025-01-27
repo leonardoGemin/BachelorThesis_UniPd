@@ -1,4 +1,4 @@
-# Bachelor's Thesis: Improving Spaced k-mer Extraction and Hash Encoding for Bioinformatics Applications
+# Bachelor's Thesis: Performance Analysis of the RSA Algorithm for Embedded Systems
 
 ## Abstract
 As technology evolves, smaller and smaller objects require solutions capable of communicating sensitive data without the fear that such data can be read by unauthorised persons.
