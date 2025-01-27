@@ -1,0 +1,337 @@
+%!TEX root = ../dissertation.tex
+%\begin{savequote}[75mm]
+%Nulla facilisi. In vel sem. Morbi id urna in diam dignissim feugiat. Proin molestie tortor eu velit. Aliquam erat volutpat. Nullam ultrices, diam tempus vulputate egestas, eros pede varius leo.
+%\qauthor{Quoteauthor Lastname}
+%\end{savequote}
+
+\chapter{Metodi di attacco al Crittosistema RSA}
+
+\newthought{Diverse sono le modalità di attacco al crittosistema,} a partire dalla fattorizzazione di $n$, ovvero il metodo più ovvio, fino ad arrivare ad attacchi più sofisticati.
+
+%
+%
+\section{Fattorizzazione}
+%
+%
+
+Dal momento che la variabile $n$ è data dal prodotto di due numeri primi, la prima possibilità consiste nel dividerla con ogni intero dispari $p \leq \left\lfloor \sqrt{n} \right\rfloor$. Questo metodo diventa irragionevole nel momento in cui la variabile $n$ supera la soglia di $10^{12}$. In questo momento storico, dove è suggerito utilizzare delle chiavi di lunghezza $2kbit$, tale soglia è stata superata all'incirca di $10^{605}$ volte. %Questo numero non è confrontabile facilmente, basi pensare che il rapporto tra il raggio della stella più grande mai conosciuta, che ha un raggio di 1708 raggi solari, ed un elettrone è pari a $10^{30}$.
+
+%
+\subsection{Algoritmo $p-1$ di Pollard}
+%
+
+Siano $n$, $B$ due numeri interi. Supponiamo che esista un numero primo $p$, divisore di $n$, tale che se $p-1 = \prod_{i=1}^{k} q_i^{\alpha_i}$, allora $q_i^{\alpha_i} \leq B$. Per cui $p-1$ è divisore di $B!$. Esiste, allora, un numero $j_0 \in [2, B!]$ tale che $j_0 = k(p-1)$.
+
+Per il piccolo Teorema di Fermat, vale che $2^{j_0} \equiv 1 \pmod{p}$. Quindi $p$ risulta essere divisore di $gcd(2^{j_0} - 1, n)$.
+
+Se $gcd(2^{j_0} - 1, n) < n$, allora $gcd(2^{j_0} - 1, n)$ è un fattore di $n$.
+
+\begin{algorithm}[H]
+	\caption{$p-1$ di Pollard}
+	\label{alg:pollardP1}
+	\DontPrintSemicolon
+	\KwIn{$n, B$}
+	\KwOut{$d$ in caso di successo, $-1$ altrimenti}
+	\Begin{
+		$a \gets 2$\;
+		\For{$j \gets 2$ \KwTo $B$}{
+			$a \gets 2^j - 1$\;
+			$d \gets gcd(a, n)$\;
+		}
+		
+		\If{$1 < d < n$}{
+			\KwRet{$d$}\;
+		}
+		
+		\KwRet{$-1$}\;
+	}
+\end{algorithm}
+
+Analizzando l'algoritmo, si evince che sia di tipo \emph{Las Vegas}, ovvero il cui output è sempre corretto, ma il tempo di esecuzione è probabilistico. Perché l'algoritmo funzioni, $n$ deve ammettere un divisore primo $p$, tale che $p-1$ sia costituito da potenze di primi piccoli, in particolare minori o uguali a $B$.
+
+Un modo abbastanza immediato per rendere il crittosistema RSA immune da questo tipo di attacco consiste nel generare due numeri primi $p$ e $q$ tali che $p = 2p_1 + 1$ e $q = 2q_1 + 1$, con $p_1$ e $q_1$ primi grandi.
+
+%
+\subsection{Algoritmo $\rho$ di Pollard}
+%
+
+L'algoritmo $\rho$ di Pollard è un metodo probabilistico di fattorizzazione basato sulla seguente idea.
+
+Sia $p$ il divisore primo più piccolo di n. Se esistono $x, x' \in \mathbb{Z}_n$ diversi tra loro e tali che $x \equiv x' \pmod{p}$, allora \[ p \leq gcd(x-x', n) \leq n \]
+
+È importante notare che, presi casualmente $x$ e $x'$, è possibile calcolare $gcd(x-x', n)$ senza conoscere $p$. Inoltre, se $x, x' \in \mathbb{Z}_p$, $1 \leq p \leq gcd(x-x', n)$.
+
+Per fare ciò, si sceglie $X \subseteq \mathbb{Z}_n$ e, per ogni coppia $\left( x, x' \right)$ di elementi distinti di $X$, si calcola $gcd(x-x', n)$. L'algoritmo ha successo se $x \mapsto x \bmod p$ ammette una collisione in $X$.
+
+Utilizzando il \emph{paradosso del compleanno}, ciò si verifica con una probabilità del 50\% se $|X| \simeq 1.17\sqrt{p}$. Tuttavia, siccome $p$ è sconosciuto, la collisione è determinata solo valutando $gcd(x-x', n)$ per ogni coppia $\left( x, x' \right)$ di elementi distinti di $X$.
+
+Pertanto, per determinare una collisione, il numero dei \emph{massimi comun divisori} da calcolare è
+\begin{equation*}
+	\left(
+		\begin{array}{c}
+			|X| \\
+			2
+		\end{array}
+	\right) > \frac{p}{2}
+\end{equation*}
+che è un numero elevato. Per ridurre il numero di questi calcoli, che la memoria da utilizzare, l'algoritmo $\rho$ di Pollard procede come segue:
+\begin{enumerate}
+	\item Si considera $f \in \mathbb{Z}[x]$ e $x_1 \in \mathbb{Z}_n$; generalmente, $f(x) = x^2 + 1$;
+	\item Si consideri la successione definita da $x_{j+1} \equiv f(x_j) \pmod{n}$ per $2 \leq j \leq m-1$;
+	\item Ogni volta che si determina un $x_j$, si valuta $gcd(x_j - x_i, n)$ per ogni $j<i$.
+\end{enumerate}
+
+Si può dimostrare che \[ x_i \equiv x_j \pmod{p} \implies \forall \delta \in \mathbb{N} : x_{i+\delta} \equiv x_{j+\delta} \pmod{p} \]
+
+Ci viene, quindi, in aiuto un trucco, detto ``di Floyd'', che afferma: se $x_i \equiv x_j \pmod{p}$, allora esiste $i' \in {i, i+1, \dotsc, j-1}$ tale che $x_{i'} \equiv x_{2i'} \pmod{p}$. 
+
+\begin{algorithm}[H]
+	\caption{$\rho$ di Pollard}
+	\label{alg:pollardRHO}
+	\DontPrintSemicolon
+	\KwIn{$n, x_1$}
+	\KwOut{$p$ in caso di successo, $-1$ altrimenti}
+	\Begin{
+		$x \gets x_1$\;
+		$x' \gets f(x) \bmod n$\;
+		$p \gets gcd(x-x', n)$\;
+		
+		\While{$p = 1$}{
+			$x \gets f(x) \bmod n$\;
+			$x' \gets f(f(x')) \bmod n$\;
+			$p \gets gcd(x-x', n)$\;
+		}
+		
+		\If{$p \neq n$}{
+			\KwRet{$p$}\;
+		}
+		
+		\KwRet{$-1$}\;
+	}
+\end{algorithm}
+
+Nell'algoritmo si cercano collisioni del tipo $x_{i'} \equiv x_{2i'} \pmod{p}$ per qualche $i' \in \{i, i+1, \dotsc, j-1\}$. Quindi, all'iterazione $i$-esima si calcola solo $gcd(x_{2i} − x_i, n)$. Il numero di iterazioni per determinare un fattore primo di $n$ è di circa $\sqrt{p}$.
+
+La probabilità di successo dell'algoritmo è circa $\frac{p}{n} < \frac{1}{\sqrt{n}}$, mentre la sua complessità è pari a $O(\sqrt[4]{n} \cdot \ln n)$.
+
+%
+\subsection{Algoritmo di Dixon}
+%
+
+Nel 1981, John D. Dixon, professore di matematica all'Università di Carleton, pubblica un algoritmo per la fattorizzazione di numeri interi. L'idea di base è molto semplice: determinare due interi $x$ e $y$ tali che 
+\begin{equation*}
+	\begin{cases}
+		x \not\equiv \pm y \pmod{n} \\
+		x^2 \equiv y^2 \pmod{n}
+	\end{cases}
+\end{equation*}
+Pertanto, $n$ è divisore di $(x+y)(x-y)$, ma non divide $x+y$ o $x-y$. Allora $gcd(n, x-y)$ e $gcd(n, x+y)$ sono fattori non banali di $n$.
+
+L'algoritmo opera nel modo seguente:
+\begin{enumerate}
+	\item Sia $\mathcal{B} = \{p_1, \dotsc, p_b\}$ un sottoinsieme di numeri primi;
+	\item Siano $z_1, \dotsc, z_c$ degli interi casuali, con $c>b$. Per ogni $z_i$, si calcoli $z_i^2 \bmod n$. Generalmente, gli interi scrivibili come $j + \lceil \sqrt{kn} \rceil$ con $j = 0, 1, \dotsc$ e $k = 1, 2, \dotsc$, tendono a produrre i corrispondenti $z_i^2 \bmod n$ relativamente piccoli, quindi completamente fattorizzabili rispetto ai primi di $\mathcal{B}$. 
+	\item Per ogni $j \in [1, c]$, \[ z_j^2 \equiv p_1^{\alpha_{1j}} \cdot p_2^{\alpha_{2j}} \dotsm p_b^{\alpha_{bj}} \pmod{n} \] si considera il vettore di $\mathbb{Z}_2^b$ definito da \[ \vec{a}_i = (\alpha_{1j} \bmod 2, \alpha_{2j} \bmod 2, \dotsc, \alpha_{bj} \bmod 2) \]
+	\item Poiché $c>b$, i vettori $\vec{a}_1, \dotsc, \vec{c}_1$ sono linearmente dipendenti. Quindi esiste $X \subseteq \{1, \dotsc, c\}$ tale che $\sum_{j \in X} \vec{a}_j = \vec{0}$; pertanto \[ \prod_{j \in X} z_j^2 \equiv \prod_{i = 1}^b p_i^{\sum_{j \in X} \alpha_{ij}} \pmod{n} \]
+	Siccome $\sum_{j\in X} \vec{a}_j = \vec{0}$, allora \[ \sum_{j\in X} a_{ij} = 2k_i,\;\forall j \in X \]
+	Posto $x = \prod_{j \in X} z_j$ e $y = \prod_{i=1}^b p_i^{k_i}$ vale che \[ x^2 \equiv y^2 \pmod{n} \]
+	\item Dal risultato del punto precedente, si procede al calcolo di $gcd(n, x-y)$ o di $gcd(n, x+y)$.
+\end{enumerate}
+
+
+%
+%
+\section{Altri metodi di attacco}
+%
+%
+
+%
+\subsection{Fattorizzazione attraverso $\phi(n)$}
+%
+
+Forzare il crittosistema RSA equivale ad essere in grado di calcolare la funzione \emph{toziente} $\phi(n)$. Se, oltre alla chiave $n$, si è a conoscenza della funzione toziente, allora è facilmente computabile la fattorizzazione di $n$.
+
+Sia $n = p \cdot q$, con $p$ e $q$ primi distinti tra loro. Allora
+\begin{align*}
+	\phi(n) &= (p-1) \cdot (q-1) \\
+	&= p \cdot q - p - q + 1 \\
+	&= n - (p+q) + 1
+\end{align*}
+
+Invertendo di posto $\phi(n)$ e $p+q$ si ottiene \[ p+q = n - \phi(n) + 1 \]
+
+Quindi sostituiamo $q$ con $\frac{n}{p}$ ed otteniamo
+\begin{gather*}
+	p + \frac{n}{p} = n - \phi(n) + 1 \\
+	p^2 + n = \left( n - \phi(n) + 1 \right)p \\
+	p^2 - \left( n - \phi(n) + 1 \right)p + n = 0
+\end{gather*}
+
+Detto $k = \left( n - \phi(n) + 1 \right)$, si ottengono le soluzioni: 
+\begin{align*}
+	p &= \frac{k \pm \sqrt{k^2 + 4n}}{2} \\
+	q &= \frac{2n}{k \pm \sqrt{k^2 + 4n}}
+\end{align*}
+
+La complessità computazionale richiesta per calcolare $p$ e $q$ a partire dalla conoscenza di $n$ e di $\phi(n)$ è pari a $O(\log^3 n)$.
+
+
+%
+\subsection{Esponente di decrifratura}
+%
+
+Come la conoscenza del valore della funzione toziente porta alla fattorizzazione di $n$, anche la conoscenza dell'esponente di decifratura $d$ porta allo stesso risultato, ma in tempi polinomiali.
+
+Sia $n= p \cdot q$, con $p$ e $q$ primi e distinti tra loro, e siano $e$ e $d$ gli esponenti rispettivamente di cifratura e di decifratura di un generico utente che utilizza il crittosistema RSA. Allora \[ ed - 1 = 2^s \cdot r \equiv 0 \pmod{\phi(n)} \] con $r$ dispari. Se $w$ è un intero tale che $gcd(w, n) = 1$, dal Teorema di Eulero discende che \[ w^{2^s \cdot r} \equiv 1 \pmod{n} \]
+
+Sia $t = min\{0, \dotsc, s\}$ tale che $w^{2^t \cdot r} \equiv 1 \pmod{n}$. Se $w^{2^{t-1} \cdot r} \not\equiv -1 \pmod{n}$ per $t>0$, allora $w^{2^{t-1} \cdot r}$ è una radice quadrata non banale di $1$ in $\mathbb{Z}_n$. Pertanto \[ 1 < gcd(w^{2^{t-1} \cdot r}, n) < n \] cioè $gcd(w^{2^{t-1} \cdot r}, n) \in [p, q]$ e quindi $n$ è fattorizzato.
+
+Se, però, $w$ è un intero tale che $gcd(w, n) = 1$ e vale una delle seguenti congurenze
+\begin{enumerate}
+	\item $w^r \equiv 1 \pmod{n}$
+	\item $w^{2^t \cdot r} \equiv -1 \pmod{n}$ per $t \in [0, s-1]$
+\end{enumerate}
+il procedimento illustrato sopra non è più valido. Questo perché $w$ è una base rispetto alla quale $n$ è uno pseudoprimo di Eulero.
+
+La probabilità di fattorizzare $n$ corrisponde alla probabilità di trovare una base rispetto alla quale $n$ non è uno pseudoprimo di Eulero. Tale probabilità è maggiore o uguale ad $^1/_2$.
+
+
+
+%
+\subsection{Attacco di Wiener}
+%
+
+L'attacco di Wiener prende il nome dal suo inventore Norbert Wiener (1894-1964), matematico e statistico statunitense. Tale attacco al crittosistema si basa su una debolezza del sistema stesso, in particolare sulla scarsa lunghezza dell'esponente di decifratura. Infatti, minore è la lunghezza della chiave $d$, minore è il tempo necessario per decrittare il messaggio cifrato. Questo perché, per un modulo di lunghezza fissata, il tempo di decifrazione è proporzionale alla lunghezza in bit dell'esponente scelto.
+
+%Le condizioni che rendono possibile la determinazione della chiave di decifratura $d$ sono che $p$ sia compreso tra $q$ e $2q$ e che $3d < \sqrt[4]{n}$.
+%
+%Dal momento che la coppia $(n, e)$ compone la chiave pubblica, l'attacco si basa sulla determinazione di $d$ attraverso lo sviluppo in frazione continua di $\frac{e}{d}$.
+%
+%\begin{definizione}[Frazione continua]
+%	Siano $a_0, a_1, \dotsc, a_n$ interi tali che $a_0, a_1, \dotsc, a_n > 0$, allora un'espressione della forma
+%	\[ a_0 + \frac{1}{a_1 + \frac{1}{a_2 + \frac{1}{a_3 + \frac{1}{\dotsb + a_n}}}} \]
+%	si dice frazione continua finita e la si denota con $[a_0, a_1, \dotsc, a_n]$.
+%\end{definizione}
+%
+L'attacco si basa fondamentalmente su tre concetti: il teorema di Wiener, il teorema di Legendre e l'algoritmo delle frazioni continue.
+
+\begin{teorema}[Teorema sulla convergenza]
+	Siano $a$, $b$, $c$ e $d$ numeri interi tali che $gcd(a,b) = gcd(c, d) = 1$. Se \[ \left| \frac{a}{b} - \frac{c}{d} \right| < \frac{1}{2d^2} \] allora $\frac{c}{d}$ è uno dei convergenti di $\frac{a}{b}$.
+\end{teorema}
+
+\begin{teorema}[Teorema di Wiener]
+	Sia $n = p \cdot q$, con $p$ e $q$ primi tali che $q < p < 2q$.
+	Siano $d \geq 1$ ed $e < \phi(n)$ tali che $ed \equiv 1 \pmod{\phi(n)}$.
+
+	Se $3d < \sqrt[4]{n}$ allora $\frac{t}{d}$ è uno dei convergenti dello sviluppo mediante frazioni continue di $\frac{e}{n}$.
+\end{teorema}
+
+\begin{proof}
+	Poiché $ed \equiv 1 \pmod{\phi(n)}$, segue che \[ \exists t \in \mathbb{Z} \;|\; ed - 1 = t\phi(n) \]
+	Questo implica che $t\phi(n) < ed < \phi(n)d$ e $t < d$, che a loro volta implica che
+	\begin{equation}
+		\label{eqn:wiener1}
+		3t < 3d < \sqrt[4]{n}
+	\end{equation}
+	Dato che $n = pq$ e che $pq > q^2$, si ha che $q < \sqrt{n}$; inoltre da $p < 2q$ segue che \[ 0 < n - \phi(n) = p + q - 1 < 2q + q - 1 < 3q < 3\sqrt{n} \]
+	Dal risultato \eqref{eqn:wiener1} segue che \[ 0 < d\left( n - \phi(n) \right) < 3k\sqrt{n} < \sqrt[4]{n^3} \]
+	Dal teorema sulla convergenza, vediamo che 
+	\begin{align*}
+		\left| \frac{e}{n} - \frac{t}{d} \right| &= \left| \frac{ed - tn}{dn} \right| = \left| \frac{ed - 1 + 1 - tn}{dn} \right| = \left| \frac{t\phi(n) + 1 - kn}{dn} \right| \\
+		&= \left| \frac{1 - t\left( n - \phi(n) \right)}{dn} \right| \leq \frac{t\left( n - \phi(n) \right)}{dn} \leq \frac{\sqrt[4]{n^3}}{dn} \\
+		&= \frac{1}{d\sqrt[4]{n}} \leq \frac{1}{3d^2} < \frac{1}{2d^2}
+	\end{align*}
+	Pertanto, $\frac{t}{d}$ è uno dei convergenti dell'espansione mediante frazioni continue di $\frac{e}{n}$.
+\end{proof}
+
+L'algoritmo che segue è lo pseudocodice per un attacco di Wiener ad un crittosistema RSA. Il richiamo alla funzione \emph{algoritmo di Euclide esteso} si riferisce all'estensione dell'algoritmo di Euclide per il calcolo del massimo comun divisore, descritta nel paragrafo~\ref{sec:chiaveDecrittazione} relativo al \emph{calcolo della chiave di decrittazione}, a pagina~\pageref{sec:chiaveDecrittazione}.
+
+\begin{algorithm}[H]
+	\caption{wienerAttack}
+	\label{alg:wienerAttack}
+	\DontPrintSemicolon
+	\KwIn{$n, e$}
+	\KwOut{$(p, q)$ in caso di successo, $-1$ altrimenti}
+	\Begin{
+		$\left( q_1, \dotsc, q_m; r_m \right) \gets \text{ algoritmo di Euclide esteso}(n, b)$\;
+		$c_0 \gets 1$\;
+		$c_1 \gets q_1$\;
+		$d_0 \gets 0$\;
+		$d_1 \gets 1$\;
+		
+		\For{$j \gets 1$ \KwTo $m$}{
+			$n' \gets (d_j e - 1)/c_j$\;
+			\tcc{Se $c_j / d_j$ è il convergente corretto, allora $n' = \phi(n)$}
+			
+			\If{$n' \in \mathbb{Z}$}{
+				$(p, q) \gets \text{le soluzioni dell'equazione } x^2 - (n - n' + 1)x + n = 0$\;
+				
+				\If{$p, q \in \mathbb{Z}^+$ e $p<n$ e $q<n$}{
+					\KwRet{$(p, q)$}\;
+				}
+			}
+			
+			$j \gets j + 1$\;
+			$c_j \gets q_j c_{j-1} + c_{j-2}$\;
+			$d_j \gets q_j d_{j-1} + d_{j-2}$\;
+		}
+		
+		\KwRet{$-1$}\;
+	}
+\end{algorithm}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

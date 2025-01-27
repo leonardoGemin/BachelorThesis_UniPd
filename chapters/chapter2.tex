@@ -1,0 +1,878 @@
+%!TEX root = ../dissertation.tex
+%\begin{savequote}[75mm]
+%Nulla facilisi. In vel sem. Morbi id urna in diam dignissim feugiat. Proin molestie tortor eu velit. Aliquam erat volutpat. Nullam ultrices, diam tempus vulputate egestas, eros pede varius leo.
+%\qauthor{Quoteauthor Lastname}
+%\end{savequote}
+
+\chapter{Aritmetica a precisione multipla}
+
+\newthought{Una delle prime cose da fare} per implementare da zero un sistema complesso come può essere un generatore di chiavi criptate, è sicuramente adattare gli algoritmi basilari che servono ad interagire con i numeri alle esigenze del software che si va a creare.
+
+Questa implementazione si rende necessaria in quanto il tipo di dato in cui memorizzare un numero intero è di 32 \emph{bit} di lunghezza, mentre il sistema andrà ad interagire con numeri le cui dimensioni variano in un \emph{range} di \emph{bit} molto elevato. L'attuale standard definito dal NIST\cite{NIST} raccomanda un uso con chiavi lunghe 2048 \emph{bit}, anche se è previsto un innalzamento dei sistemi di sicurezza con chiavi ancora più lunghe entro il prossimo decennio.
+
+\begin{table}[h]
+	\label{dimensioniRSAnelTempo}
+	\centering
+	\begin{tabular}{cc}
+		\toprule
+		Anni & Dimensioni della chiave \\
+		\midrule
+		Fino al 2010 & 1024 bit\\
+		Fino al 2030 & 2048 bit\\
+		Oltre il 2030 & 3072 bit\\
+		\bottomrule
+	\end{tabular}
+	\caption{Dimensioni consigliate delle chiavi RSA negli anni.}
+\end{table}
+
+Gli algoritmi che devono essere adattati non si limitano esclusivamente alle quattro operazioni fondamentali dell'aritmetica, ma comprendono anche altre funzioni che fanno loro da corona e che li completano. Tra queste operazioni troviamo gli algoritmi di inizializzazione e di stampa, le operazioni \emph{bit a bit}, gli algoritmi di confronto e quelli di incremento e di decremento unitario.
+
+Per poter sopperire alla mancanza di strutture adeguate a memorizzare chiavi della lunghezza desiderata, e per poter effetturare le operazioni per il calcolo e la creazione delle stesse, è stata ideata una struttura composta da:
+ un numero intero che descrive il segno del numero stesso e da un array di interi a 32 \emph{bit} in cui viene salvato il modulo del numero.
+% immagine della struttura con l'array
+
+Al fine rendere il più elastico possibile il software, nelle prime righe del codice sorgente, sono inserite delle definizioni che facilitano la modifica dei dati di base, quali la lunghezza delle chiavi, il numero di celle dell'array e il tipo di dato, senza segno, che compone l'array. Viene inoltre definito un ulteriore tipo di dato di lunghezza doppia rispetto al tipo di dato principale. Ad esempio, a fronte di un tipo di dato principale \textbf{uint32\_t}, il dato di lunghezza doppia è \textbf{uint64\_t}.
+
+Per l'implementazione della matematica di base, sono stati implementati gli algoritmi descritti da Donald Knuth nel suo volume ``The art of computer programming'' \cite{Knuth}. Sebbene la loro complessità computazionale non sia tra le migliori, sono stati scelti per la forte adattabilità al problema posto. Infatti, tali algoritmi operano con un sistema numerico che può differire da quello decimale. In questo caso, gli algoritmi sono stati adattati alla struttura ad \emph{array} illustrata in precedenza: al posto del sistema decimale, è stato impostato un sistema $2^{32}$-esimale.
+
+%
+\subsection{Algoritmi accessori}
+%
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, backgroundcolor=\color{bgCode}]
+/*
+ * Number of bit per BIG_NUMBER
+ * Warning! Set a length twice as long as necessary.
+ */
+#define BIT_SIZE    4096
+
+/*
+ * Data type of word and extended word
+ */
+typedef uint32_t WORD_TYPE;	
+typedef uint64_t EXTWORD_TYPE;
+
+/*
+ * Size of word: number of bit per word
+ */
+#define WORD_SIZE    ( 8 * sizeof( WORD_TYPE ) )
+
+/*
+ * Number of word per BIG_NUMBER
+ */
+#define N_WORD       ( BIT_SIZE / WORD_SIZE )
+
+/*
+ * Max value of word
+ */
+#define WORD_MAX_VAL    0xFFFFFFFF
+
+
+
+/* Data-holding structure: array of int
+ *
+ * Sign
+ *   0 -> positive;
+ *   1 -> negative;
+ */
+struct bn {
+	char sign;
+	WORD_TYPE num[N_WORD];
+};
+
+
+
+void bignum_init(struct bn* n) {
+    int i;
+    
+    n->sign = 0;
+    for (i = 0; i < N_WORD; i++) {
+        n->num[i] = 0;
+    }
+}
+\end{lstlisting}
+
+
+\clearpage
+%
+%
+\section{Addizione}
+%
+%
+
+Dati due numeri interi non negativi di lunghezza $n$, rappresentati nella forma vettoriale
+$$\vec{u} \gets \left(u_{n-1}, \dots, u_1, u_0\right)_b$$
+$$\vec{v} \gets \left(v_{n-1}, \dots, v_1, v_0\right)_b$$
+questo algoritmo restituisce la loro somma in base $b$,
+$$\vec{w} \gets \left(w_n, w_{n-1}, \dots, w_1, w_0\right)_b$$
+
+Il termine $w_n$ costituisce il riporto dell'operazione. Il suo valore è sempre uguale a $0$ oppure a $1$, a seconda della presenza o meno del riporto.
+	
+Nel caso in cui uno dei due vettori abbia lunghezza $m < n$, è sufficiente aggiungere degli zeri per colmare la disparità venutasi a creare.
+
+%
+\subsection{Pseudo-codice e complessità computazionale}
+%
+
+\begin{algorithm}[H]
+	\caption{uAdd}
+	\label{alg:uAdd}
+	\DontPrintSemicolon
+	\KwIn{$\vec{u}, \vec{v}$}
+	\KwOut{$\vec{w} \leftarrow \vec{u} + \vec{v}$}
+	\Begin{
+		$k \leftarrow 0$\;
+		\For{$j \leftarrow 0$ \KwTo $n$}{
+			$w_j \leftarrow \left(u_j + v_j + k\right) \bmod b$\;
+			$k \leftarrow \lfloor \left(u_j + v_j + k\right) / b \rfloor$\;
+		}
+		$w_n \leftarrow k$\;
+		\KwRet{$\vec{w}$}
+	}
+\end{algorithm}
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, backgroundcolor=\color{bgCode}]
+void bignum_uadd(struct bn* u, struct bn* v, struct bn* w) {
+    size_t j;
+    EXTWORD_TYPE res = 0;
+    
+    for (j = 0; j < N_WORD; j++) {
+        res = (EXTWORD_TYPE)u->num[j] + 
+              + (EXTWORD_TYPE)v->num[j] + res;
+        
+        w->num[j] = res;
+        res >>= WORD_SIZE;
+    }
+    w->sign = 0;
+}
+\end{lstlisting}
+
+È facile notare che la complessità computazionale di questo algoritmo è pari a $O(n)$.
+\clearpage
+%
+%
+\section{Sottrazione}
+%
+%
+
+Dati due numeri interi non negativi di lunghezza $n$, rappresentati nella forma vettoriale
+$$\vec{u} \gets \left(u_{n-1}, \dots, u_1, u_0\right)_b$$
+$$\vec{v} \gets \left(v_{n-1}, \dots, v_1, v_0\right)_b$$
+e tali che $\vec{u} > \vec{v}$, questo algoritmo restituisce la loro sottrazione in base $b$,
+$$\vec{w} \gets \left(w_{n-1}, \dots, w_1, w_0\right)_b$$
+	
+Nel caso in cui $\vec{v}$ abbia lunghezza $m \leq n$, è sufficiente aggiungere
+$$\forall j \in \{m, \dots, n-1\} \mbox{, } v_j = 0$$
+
+%
+\subsection{Pseudo-codice e complessità computazionale}
+%
+
+\begin{algorithm}[H]
+	\caption{uSub}
+	\label{alg:uSub}
+	\DontPrintSemicolon
+	\KwIn{$\vec{u}, \vec{v}$}
+	\KwOut{$\vec{w} \leftarrow \vec{u} - \vec{v}$}
+	\Begin{
+		$k \leftarrow 0$\;
+		\For{$j \leftarrow 0$ \KwTo $n$}{
+			$w_j \leftarrow \left(u_j - v_j - k\right) \bmod b$\;
+			$k \leftarrow \lfloor \left(u_j - v_j - k\right) / b \rfloor$\;
+		}
+		\KwRet{$\vec{w}$}
+	}
+\end{algorithm}
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, backgroundcolor=\color{bgCode}]
+void bignum_usub(struct bn* u, struct bn* v, struct bn* w) {
+    size_t j;
+    EXTWORD_TYPE k = 0;
+    
+    for (j = 0; j < N_WORD; j++) {
+        EXTWORD_TYPE res = (EXTWORD_TYPE)u->num[j] + 
+              - (EXTWORD_TYPE)v->num[j] - k;
+        
+        w->num[j] = res;
+        k = (res >> WORD_SIZE) ? 1 : 0;
+    }
+    w->sign = 0;
+}
+\end{lstlisting}
+
+È importante notare che, $\forall j \in \{0, \dots, n-1\}$, $k$ è pari a $0$ se nel calcolo di $w_j$ non c'è stato riporto, $1$ altrimenti.
+
+Come per il precedente algoritmo di addizione, la complessità computazionale per l'algoritmo di sottrazione è $O(n)$.
+\clearpage
+
+%
+%
+\section{Moltiplicazione}
+%
+%
+
+Dati due numeri interi non negativi rispettivamente di lunghezza $m$ e $n$, rappresentati nella forma vettoriale
+$$\vec{u} \gets \left(u_{m-1}, \dots, u_1, u_0\right)_b$$
+$$\vec{v} \gets \left(v_{n-1}, \dots, v_1, v_0\right)_b$$
+questo algoritmo restituisce la loro moltiplicazione in base $b$,
+$$\vec{w} \gets \left(w_{m+n-1}, \dots, w_1, w_0\right)_b$$
+
+%
+\subsection{Pseudo-codice e complessità computazionale}
+%
+
+\begin{algorithm}[H]
+	\caption{uMul}
+	\label{alg:uMul}
+	\DontPrintSemicolon
+	\KwIn{$\vec{u}, \vec{v}$}
+	\KwOut{$\vec{w} \leftarrow \vec{u} \cdot \vec{v}$}
+	\Begin{
+		\For{$j \leftarrow 0$ \KwTo $n$}{
+			\If{$(v_j = 0)$}{
+				$w_{j+m} \gets 0$\;
+			}
+			\Else{
+				$k \leftarrow 0$\;
+				\For{$i \leftarrow 0$ \KwTo $m$}{
+					$t \leftarrow u_i \cdot v_j + w_{i + j} + k$\;
+					$w_{i + j} \leftarrow t \bmod b$\;
+					$k \leftarrow \lfloor t / b \rfloor$\;
+				}
+				$w_{j+m} \leftarrow k$\;
+			}
+		}
+		\KwRet{$\vec{w}$}
+	}
+\end{algorithm}
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, backgroundcolor=\color{bgCode}]
+void bignum_umul(struct bn* u, struct bn* v, struct bn* w) {
+    int m = bignum_sizeof(u);
+    int n = bignum_sizeof(v);
+    
+    // Special case
+    if ( n == 0 ) {
+        bignum_init(w);
+        return;
+    }
+    if ( n == 1 ) {
+        bignum_umul_short(u, v->num[0], w);
+        return;
+    }
+    
+    size_t i, j;
+    EXTWORD_TYPE res;
+    bignum_init(w);
+    
+    for (j = 0; j < n; j++) {
+        if ( v->num[j] == 0 ) {
+            w->num[j + m] = 0;
+        } else {
+            res = 0;
+            for (i = 0; i < m; i++) {
+                res = ( (EXTWORD_TYPE)u->num[i] +
+                      * (EXTWORD_TYPE)v->num[j] ) +
+                      + (EXTWORD_TYPE)w->num[i + j] + res;
+                w->num[i + j] = res;
+                res >>= WORD_SIZE;
+            }
+            w->num[j + m] = res;
+        }
+    }
+}
+\end{lstlisting}
+
+È importante inizializzare a zero il vettore risultante $\vec{w}$ prima di iniziare l'algoritmo, per evitare che operazioni quali $$\left(w_{m+n-1}, \dots, w_0\right)_b \gets \left(u_{m-1}, \dots, u_0\right)_b \cdot \left(v_{n-1}, \dots, v_0\right)_b + \left(w_{m-1}, \dots, w_0\right)_b$$ possano restituire valori errati a causa di una precedente occupazione dello spazio di memoria.
+
+La complessità computazionale di questo algoritmo, al caso peggiore, è $O(m \cdot n)$, che si semplifica a $O(n^2)$ nel caso in cui entrambi i vettori abbiano la stessa lunghezza. Sebbene questo algoritmo sia molto semplice, non incarna la strada più rapida per effettuare la moltiplicazione tra i vettori $\vec{u}$ e $\vec{v}$ quando le loro lunghezze $m$ e $n$ sono grandi. Un procedimento computazionalmente meno oneroso può essere rappresentato dall'algoritmo di Karatsuba, dove la complessità cala del $27\%$ circa. Di primo acchito, l'implementazione dell'ultima procedura può sembrare la migliore, ma dopo una breve analisi ci si rende conto che l'iniziale vantaggio dato dalla complessità migliore, svanisce e arretra a causa del crescente spazio di memoria occupato. Come descritto brevemente nell'introduzione, in un dispositivo \emph{embedded} è necessario trovare un giusto compromesso tra complessità computazionale e occupazione di memoria.
+
+%
+\subsection{Pseudo-codice per una ``moltiplicazione corta''}
+%
+
+Nei casi in cui il vettore $\vec{v}$ abbia lunghezza unitaria, viene utilizzato l'algoritmo mostrato di seguito. Tale procedura ha una complessità computazionale lineare, che la rende preferibile all'algoritmo~\ref{alg:uMul}.
+
+\begin{algorithm}[H]
+	\caption{uMul-short}
+	\label{alg:uMul-short}
+	\DontPrintSemicolon
+	\KwIn{$\vec{u}, v$}
+	\KwOut{$\vec{w} \leftarrow \vec{u} \cdot v$}
+	\Begin{
+		\For{$j \leftarrow 0$ \KwTo $n$}{
+			Spostare il vettore $\vec{w}$ a sinistra di una parola.\;
+			$w_0 \leftarrow \lfloor \left( u_j \cdot v + k \right) / b \rfloor$\;
+			$k \leftarrow \left( u_j \times v + k \right) \bmod b $\;
+		}
+		$w_j \leftarrow k$\;
+		\KwRet{$\vec{w}$}
+	}
+\end{algorithm}
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, backgroundcolor=\color{bgCode}]
+void bignum_umul_short(struct bn* u, WORD_TYPE v, struct bn* w)
+{
+    bignum_init(w);
+    
+    int i, uLength = bignum_sizeof(u);
+    
+    EXTWORD_TYPE multiplicand = 0;
+    EXTWORD_TYPE carry = 0;
+    for (i = 0; i < uLength; i++) {
+        multiplicand = ( (EXTWORD_TYPE)u->num[i] +
+              * (EXTWORD_TYPE)v ) + carry;
+        w->num[i] = multiplicand;
+        carry = multiplicand >> WORD_SIZE;
+    }
+    
+    w->num[uLength] = carry;
+}
+\end{lstlisting}
+\clearpage
+
+%
+%
+\section{Divisione}
+%
+%
+
+Dati due numeri interi non negativi rispettivamente di lunghezza $m+n$ e $n$, rappresentati nella forma vettoriale
+$$\vec{u} \gets \left(u_{m+n-1}, \dots, u_1, u_0\right)_b$$
+$$\vec{v} \gets \left(v_{n-1}, \dots, v_1, v_0\right)_b$$
+dove $v_{n-1} \neq 0$, questo algoritmo restituisce quoziente e resto, espressi in base $b$,
+$$\vec{q} \gets \lfloor \vec{u} / \vec{v} \rfloor \gets \left(q_m, q_{m-1}, \dots, q_1, q_0\right)_b$$
+$$\vec{r} \gets \vec{u} \bmod \vec{v} \gets \left(r_{n-1}, \dots, r_1, r_0\right)_b$$
+
+%
+\subsection{Pseudo-codice e complessità computazionale}
+%
+
+\begin{algorithm}[H]
+	\caption{uDiv}
+	\label{alg:uDiv}
+	\DontPrintSemicolon
+	\KwIn{$\vec{u}, \vec{v}$}
+	\KwOut{$\vec{q} \gets \lfloor \vec{u} / \vec{v} \rfloor$\newline$\vec{r} \gets \vec{u} \bmod \vec{v}$}
+	\Begin{
+		Spostare il vettore $\vec{v}$ di $d$ posizioni verso sinistra, affinché il bit più significativo di $v_{n-1}$ sia $1$.\;
+		Spostare il vettore $\vec{u}$ di $d$ posizioni verso sinistra.\;
+		\For{$j \leftarrow m$ \KwDownTo $0$}{
+			$\hat{q} \gets \lfloor \left( u_{j+n}b + u_{j+n-1} \right) / v_{n-1} \rfloor$\;
+			$\hat{r} \gets \left( u_{j+n}b + u_{j+n-1} \right) \bmod v_{n-1}$\;
+			\If{$(\hat{q} = b)$ or $(\hat{q}v_{n-2} > b\hat{r}+u_{j+n-2})$}{
+				$\hat{q} \gets \hat{q} - 1$\;
+		      	$\hat{r} \gets \hat{r} + v_{n-1}$\;
+		      	Ripetere questo test finché $\hat{r} < b$\;
+			}
+			Sostituire $\left( u_{j+n}, u_{j+n-1}, \dots, u_j \right)_b$ con $\left( u_{j+n}, u_{j+n-1}, \dots, u_j \right)_b - \hat{q} \cdot \left( v_{n-1}, \dots, v_1, v_0 \right)_b$\;
+			$q_j \gets \hat{q}$\;
+			\While{$\left| \vec{u} \right| < 0$}{
+				$q_j \gets q_j - 1$\;
+				$\left( u_{j+n}, \dots, u_j \right)_b \gets \left( u_{j+n}, \dots, u_j \right)_b + \left( v_{n-1}, \dots, v_0 \right)_b$\;
+			}
+			Spostare il vettore $\vec{u}$ di $d$ posizioni verso destra, salvandolo in $\vec{r}$.\;
+		}
+		\KwRet{$\vec{q}, \vec{r}$}
+	}
+\end{algorithm}
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, backgroundcolor=\color{bgCode}]
+void bignum_udiv(struct bn* a, struct bn* b,
+    struct bn* quotient, struct bn* remainder) {
+    int m = bignum_sizeof(a);
+    int n = bignum_sizeof(b);
+    
+    if ( n == 0 ) {
+        perror("Error: impossible divide by 0.");
+        return 1;
+    }
+    if ( n == 1 ) {
+        bignum_udiv_short(a, b->num[0], quotient, remainder);
+        return;
+    }
+    
+    bignum_init(quotient);
+    bignum_init(remainder);
+    
+    if ( m < n ) {
+        // q = 0, r = a
+        bignum_assign(remainder, a);
+        return;
+    }
+    
+    if ( m == n ) {
+        int cmp = bignum_cmp(a, b);
+        
+        if ( cmp == SMALLER ) {
+            // q = 0, r = a
+            bignum_assign(remainder, a);
+            return;
+        }
+        if ( cmp == EQUAL ) {
+            // q = 1, r = 0
+            bignum_from_word(quotient, 0, 1);
+            return;
+        }
+    }
+    
+    
+    EXTWORD_TYPE base = (EXTWORD_TYPE)1 << WORD_SIZE;
+    m = m - n;
+    
+    
+    /*
+     * Step D1: normalize
+     */
+    int divShift;
+    for (divShift = WORD_SIZE; divShift > 0; divShift--) {
+        if ( ((b->num[n - 1] >> (divShift - 1)) & 1) != 0 ) {
+            break;
+        }
+    }
+    divShift = WORD_SIZE - divShift;
+    
+    struct bn u, v;
+    bignum_lshift(a, &u, divShift);
+    bignum_lshift(b, &v, divShift);
+    
+    
+    /*
+     * Step D2: Initialize j.
+     */
+    int j;
+    
+    for (j = m; j >= 0; j--) {
+        /*
+         * Step D3: Calculate Q'.
+         */
+        EXTWORD_TYPE product = ((EXTWORD_TYPE)u.num[j + n] <<
+              << WORD_SIZE) + (EXTWORD_TYPE)u.num[j + n - 1];
+        EXTWORD_TYPE qh = product / (EXTWORD_TYPE)v.num[n - 1];
+        EXTWORD_TYPE rh = product % (EXTWORD_TYPE)v.num[n - 1];
+        
+        EXTWORD_TYPE leftHand, rightHand;
+        char flag = FALSE;
+        
+        do {
+            leftHand = qh * (EXTWORD_TYPE)v.num[n - 2];
+            rightHand = (rh << WORD_SIZE) +
+                  + (EXTWORD_TYPE)u.num[j + n - 2];
+            
+            if ( (qh == base) || (leftHand > rightHand) ) {
+                qh--;
+                rh = rh + (EXTWORD_TYPE)v.num[n - 1];
+                flag = TRUE;
+            } else {
+                flag = FALSE;
+            }
+        } while ( flag && (rh < base) );
+        
+        
+        /*
+         * Step D4 & D6: Multiply and subtract & add back.
+         */
+        struct bn vv, tmp;
+        qh++;
+        
+        do {
+            qh--;
+            bignum_lshift(&v, &tmp, j * WORD_SIZE);
+            bignum_umul_short(&tmp, (WORD_TYPE)qh, &vv);
+        } while ( bignum_cmp(&u, &vv) == SMALLER );
+        
+        bignum_usub(&u, &vv, &tmp);
+        bignum_assign(&u, &tmp);
+        
+        
+        /*
+         * Step D5: Test remainder.
+         */
+        quotient->num[j] = qh;
+        
+        
+        /*
+         * Step D7: Loop on j.
+         */
+    }
+    
+    
+    /*
+     * Step D8: Unnormalize.
+     */
+    bignum_rshift(&u, remainder, divShift);
+    return;
+}
+\end{lstlisting}
+
+Come nel caso della moltiplicazione, la divisione può essere fatta, fondamentalmente, con il metodo tradizionale della scuola elementare. I dettagli, tuttavia, sono sorprendentemente complicati. Anche per questo algoritmo la complessità computazionale è quadratica, derivata principalmente dalla moltiplicazione, utilizzato ad ogni iterazione del ciclo \emph{for}.
+
+%
+\subsection{Pseudo-codice per ``divisione corta''}
+%
+
+Nei casi in cui il vettore $\vec{v}$ abbia lunghezza unitaria, viene utilizzato l'algoritmo mostrato di seguito. Tale procedura ha una complessità computazionale lineare, che la rende preferibile all'algoritmo~\ref{alg:uDiv}.
+
+\begin{algorithm}[H]
+	\caption{uDiv-short}
+	\label{alg:uDiv-short}
+	\DontPrintSemicolon
+	\KwIn{$\vec{u}, v$}
+	\KwOut{$\vec{q} \gets \lfloor \vec{u} / v \rfloor$\newline$\vec{r} \gets \vec{u} \bmod v$}
+	\Begin{
+		\For{$j \leftarrow n-1$ \KwDownTo $0$}{
+			Spostare il vettore $\vec{q}$ a sinistra di una parola.\;
+			$q_0 \leftarrow \lfloor \left( k \cdot b + u_j \right) / v \rfloor$\;
+			$k \leftarrow \left( k \cdot b + u_j \right) \bmod v $\;
+		}
+		$r_0 \gets k$\;
+		\KwRet{$\vec{q}, \vec{r}$}
+	}
+\end{algorithm}
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, backgroundcolor=\color{bgCode}]
+void bignum_udiv_short(struct bn* u, WORD_TYPE v,
+    struct bn* q, struct bn* r) {
+    bignum_init(q);
+    bignum_init(r);
+    
+    int i, aLength = bignum_sizeof(u);
+    
+    EXTWORD_TYPE dividend = 0;
+    WORD_TYPE rem = 0;
+    for (i = aLength; i >= 0; i--) {
+        dividend = ((EXTWORD_TYPE)rem << WORD_SIZE) + u->num[i];
+        
+        _lshift_word(q, 1);
+        q->num[0] = dividend / (EXTWORD_TYPE)v;
+        rem = dividend % (EXTWORD_TYPE)v;
+    }
+    
+    bignum_from_word(r, 0, rem);
+}
+\end{lstlisting}
+\clearpage
+
+%
+%
+\section{Operazioni matematiche con segno}
+%
+%
+
+Negli algoritmi visti fino ad ora, non sono stati presi in considerazione i segni degli operandi. In questo modo le operazioni svolte erano esclusivamente positive.
+
+Per ovviare a questo problema, sono stati introdotti degli ulteriori algoritmi che effettuano dei controlli sugli operandi e sui loro segni, richiamano i rispettivi algoritmi \emph{unisgned} e calcolano il segno del risultato.
+
+%
+\subsection{Addizione}
+%
+
+Per effettuare un'addizione con segno, è necessario distinguere 4 casi, in base al segno degli operandi:
+\begin{enumerate}
+	\item $W = (+U) + (+V)$. In questo caso il modulo del risultato è la mera somma degli operandi; il segno è positivo.
+	\item $W = (+U) + (-V)$. L'equazione può essere riscritta cambiando il segno del secondo operando e dell'operazione stessa, diventando una sottrazione $W = (+U) - (+V)$. Si distinguono due ulteriori casi:
+	\begin{itemize}
+		\item Se $\lvert U \rvert \geq \lvert V \rvert$, allora $W = (+U) - (+V)$ con segno positivo.
+		\item Se $\lvert U \rvert < \lvert V \rvert$, allora $W = (+V) - (+U)$ con segno negativo.
+	\end{itemize}
+	\item $W = (-U) + (+V)$. L'equazione può essere riscritta invertendo i fattori, cambiando il segno del primo operando e dell'operazione stessa, diventando una sottrazione $W = (+V) - (+U)$. Si distinguono due ulteriori casi, speculari al secondo caso:
+	\begin{itemize}
+		\item Se $\lvert V \rvert \geq \lvert U \rvert$, allora $W = (+V) - (+U)$ con segno positivo.
+		\item Se $\lvert V \rvert < \lvert U \rvert$, allora $W = (+U) - (+V)$ con segno negativo.
+	\end{itemize}
+	\item $W = (-U) + (-V)$. In modo speculare al primo caso, il modulo del risultato è la mera somma degli operandi, mentre il segno è negativo.
+\end{enumerate}
+
+\begin{algorithm}[H]
+	\caption{add}
+	\label{alg:add}
+	\DontPrintSemicolon
+	\KwIn{$\vec{u}, \vec{v}$}
+	\KwOut{$\vec{w} \gets \vec{u} + \vec{v}$}
+	\Begin{
+		\tcc{FIRST and FOURTH CASES}
+		\If{$\vec{u}.sign() = \vec{v}.sign()$}{
+			$|\vec{w}| \leftarrow \mbox{uAdd}(\vec{u}, \vec{v})$\;
+			$\vec{w}.sign() \leftarrow \vec{u}.sign()$\;
+		}
+		
+		\tcc{SECOND CASE}
+		\If{$\vec{u}.sign() = 0$ \KwAnd $\vec{v}.sign() = 1$}{
+			\If{$|\vec{u}| > |\vec{v}|$}{
+				$|\vec{w}| \leftarrow \mbox{uSub}(\vec{u}, \vec{v})$\;
+				$\vec{w}.sign() \leftarrow 0$\;
+			} \Else{
+				$|\vec{w}| \leftarrow \mbox{uSub}(\vec{v}, \vec{u})$\;
+				$\vec{w}.sign() \leftarrow 1$\;
+			}
+		}
+		
+		\tcc{THIRD CASE}
+		\If{$\vec{u}.sign() = 1$ \KwAnd $\vec{v}.sign() = 0$}{
+			\If{$|\vec{u}| > |\vec{v}|$}{
+				$|\vec{w}| \leftarrow \mbox{uSub}(\vec{u}, \vec{v})$\;
+				$\vec{w}.sign() \leftarrow 1$\;
+			} \Else{
+				$|\vec{w}| \leftarrow \mbox{uSub}(\vec{v}, \vec{u})$\;
+				$\vec{w}.sign() \leftarrow 0$\;
+			}
+		}
+		
+		\KwRet{$\vec{w}$}
+	}
+\end{algorithm}
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, backgroundcolor=\color{bgCode}]
+void bignum_add(struct bn* a, struct bn* b, struct bn* c) {
+    // FIRST  and  FOURTH  CASES
+    if ( a->sign == b->sign ) {
+        bignum_uadd(a, b, c);
+        c->sign = a->sign;
+        return;
+    }
+    
+    // SECOND  CASE:  A - B
+    if ( ( a->sign == 0 ) && ( b->sign == 1 ) ) {
+        if ( bignum_cmp(a, b) != SMALLER ) {
+            bignum_usub(a, b, c);
+            c->sign = 0;
+        } else {
+            bignum_usub(b, a, c);
+            c->sign = 1;
+        }
+    return;
+    }
+    
+    // THIRD  CASE:  B - A
+    if ( ( a->sign == 1 ) && ( b->sign == 0 ) ) {
+        if ( bignum_cmp(b, a) != SMALLER ) {
+            bignum_usub(b, a, c);
+            c->sign = 0;
+        } else {
+            bignum_usub(a, b, c);
+            c->sign = 1;
+        }
+    return;
+    }
+}
+\end{lstlisting}
+
+%
+\subsection{Sottrazione}
+%
+
+Per effettuare una sottrazione con segno, è necessario distinguere 4 casi, in base al segno degli operandi:
+\begin{enumerate}
+	\item $W = (+U) - (+V)$. È necessario distinguere due ulteriori casi:
+	\begin{itemize}
+		\item Se $\lvert U \rvert \geq \lvert V \rvert$, allora $W = (+U) - (+V)$ con segno positivo.
+		\item Se $\lvert U \rvert < \lvert V \rvert$, allora $W = (+V) - (+U)$ con segno negativo.
+	\end{itemize}
+	\item $W = (+U) - (-V)$. L'equazione può essere riscritta cambiando il segno del secondo operando e dell'operazione stessa, diventando una somma $W = (+U) + (+V)$. Il segno è positivo.
+	\item $W = (-U) - (+V)$. L'equazione può essere riscritta come $W = -\left( (+U) + (+V) \right)$, quindi il modulo è la somma degli operatori, mentre il segno è negativo.
+	\item $W = (-U) - (-V)$. Dopo le opportune modifiche, l'equazione diventa $W = (+V) - (+U)$. Specularmente al primo caso si individuano due ulteriori casi:
+	\begin{itemize}
+		\item Se $\lvert V \rvert \geq \lvert U \rvert$, allora $W = (+V) - (+U)$ con segno positivo.
+		\item Se $\lvert V \rvert < \lvert U \rvert$, allora $W = (+U) - (+V)$ con segno negativo.
+	\end{itemize}
+\end{enumerate}
+
+\begin{algorithm}[H]
+	\caption{sub}
+	\label{alg:sub}
+	\DontPrintSemicolon
+	\KwIn{$\vec{u}, \vec{v}$}
+	\KwOut{$\vec{w} \gets \vec{u} + \vec{v}$}
+	\Begin{
+		\tcc{FIRST CASE}
+		\If{$\vec{u}.sign() = 0$ \KwAnd $\vec{v}.sign() = 0$}{
+			\If{$|\vec{u}| > |\vec{v}|$}{
+				$|\vec{w}| \leftarrow \mbox{uSub}(\vec{u}, \vec{v})$\;
+				$\vec{w}.sign() \leftarrow 0$\;
+			} \Else{
+				$|\vec{w}| \leftarrow \mbox{uSub}(\vec{v}, \vec{u})$\;
+				$\vec{w}.sign() \leftarrow 1$\;
+			}
+		}
+		
+		\tcc{SECOND and THIRD CASES}
+		\If{$\vec{u}.sign() \neq \vec{v}.sign()$}{
+			$|\vec{w}| \leftarrow \mbox{uAdd}(\vec{u}, \vec{v})$\;
+			$\vec{w}.sign() \leftarrow \vec{u}.sign()$\;
+		}
+	
+		\tcc{FOURTH CASE}
+		\If{$\vec{u}.sign() = 1$ \KwAnd $\vec{v}.sign() = 0$}{
+			\If{$|\vec{u}| > |\vec{v}|$}{
+				$|\vec{w}| \leftarrow \mbox{uSub}(\vec{u}, \vec{v})$\;
+				$\vec{w}.sign() \leftarrow 1$\;
+			} \Else{
+				$|\vec{w}| \leftarrow \mbox{uSub}(\vec{v}, \vec{u})$\;
+				$\vec{w}.sign() \leftarrow 0$\;
+			}
+		}
+		
+		\KwRet{$\vec{w}$}
+	}
+\end{algorithm}
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, backgroundcolor=\color{bgCode}]
+void bignum_sub(struct bn* a, struct bn* b, struct bn* c) {
+    // FIRST  CASE:  A - B
+    if ( ( a->sign == 0 ) && ( b->sign == 0 ) ) {
+        if ( bignum_cmp(a, b) != SMALLER ) {
+            bignum_usub(a, b, c);
+            c->sign = 0;
+        } else {
+            bignum_usub(b, a, c);
+            c->sign = 1;
+        }
+    return;
+    }
+    
+    // SECOND  and  THIRD  CASES
+    if ( a->sign != b->sign ) {
+        bignum_uadd(a, b, c);
+        c->sign = a->sign;
+        return;
+    }
+    
+    // FOURTH  CASE:  B - A
+    if ( ( a->sign == 1 ) && ( b->sign == 1 ) ) {
+        if ( bignum_cmp(b, a) != SMALLER ) {
+            bignum_usub(b, a, c);
+            c->sign = 0;
+        } else {
+            bignum_usub(a, b, c);
+            c->sign = 1;
+        }
+    return;
+    }
+}
+\end{lstlisting}
+
+
+%
+\subsection{Moltiplicazione}
+%
+
+Per la moltiplicazione, il calcolo del segno viene effettuato tramite una semplice operazione di $XOR$ tra i segni degli operandi.
+
+\begin{algorithm}[H]
+	\caption{mul}
+	\label{alg:mul}
+	\DontPrintSemicolon
+	\KwIn{$\vec{u}, \vec{v}$}
+	\KwOut{$\vec{w} \leftarrow \vec{u} \cdot \vec{v}$}
+	\Begin{
+		$|\vec{w}| \leftarrow \mbox{uMul}(\vec{u}, \vec{v})$\;
+		$\vec{w}.sign() \leftarrow \vec{u}.sign() \oplus \vec{v}.sign()$\;
+		\KwRet{$\vec{w}$}
+	}
+\end{algorithm}
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, backgroundcolor=\color{bgCode}]
+void bignum_mul(struct bn* a, struct bn* b, struct bn* c) {
+    
+    bignum_umul(a, b, c);
+    c->sign = a->sign ^ b->sign;
+}
+\end{lstlisting}
+
+%
+\subsection{Divisione e Modulo}
+%
+
+Pari modo alla moltiplicazione, avviene per la divisione. L'unica differenza è che il vettore resto $\vec{r}$, uno dei due risultati dell'algoritmo \emph{uDiv}, viene tenuto in considerazione esclusivamente dall'algoritmo~\ref{alg:mod}. 
+
+\begin{algorithm}[H]
+	\caption{div}
+	\label{alg:div}
+	\DontPrintSemicolon
+	\KwIn{$\vec{u}, \vec{v}$}
+	\KwOut{$\vec{q} \gets \lfloor \vec{u} / \vec{v} \rfloor$}
+	\Begin{
+		$\left(|\vec{q}|, |\vec{r}| \right) \leftarrow \mbox{uDiv}(\vec{u}, \vec{v})$\;
+		$\vec{q}.sign() \leftarrow \vec{u}.sign() \oplus \vec{v}.sign()$\;
+		\KwRet{$\vec{q}$}
+	}
+\end{algorithm}
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, backgroundcolor=\color{bgCode}]
+void bignum_div(struct bn* a, struct bn* b, struct bn* c) {
+    struct bn tmp;
+    
+    bignum_udiv(a, b, c, &tmp);
+    c->sign = a->sign ^ b->sign;
+}
+\end{lstlisting}
+
+\begin{algorithm}[H]
+	\caption{mod}
+	\label{alg:mod}
+	\DontPrintSemicolon
+	\KwIn{$\vec{u}, \vec{v}$}
+	\KwOut{$\vec{r} \gets \vec{u} \bmod \vec{v}$}
+	\Begin{
+		$\left(|\vec{q}|, |\vec{r}| \right) \leftarrow \mbox{uDiv}(\vec{u}, \vec{v})$\;
+		$\vec{r}.sign() \leftarrow 0$\;
+		\KwRet{$\vec{r}$}
+	}
+\end{algorithm}
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, backgroundcolor=\color{bgCode}]
+void bignum_mod(struct bn* a, struct bn* b, struct bn* c) {
+    struct bn tmp;
+    
+    bignum_udiv(a, b, &tmp, c);
+    c->sign = 0;
+}
+\end{lstlisting}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

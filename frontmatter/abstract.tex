@@ -1,0 +1,13 @@
+%!TEX root = ../dissertation.tex
+% the abstract
+
+\newthought{Con l'evolversi della tecnologia,} oggetti sempre più piccoli necessitano soluzioni in grado di comunicare dati sensibili senza il timore che tali dati possano essere letti da persone non autorizzate.
+
+Proprio per questo motivo, si è resa necessaria una reimplementazione del crittosistema RSA, letto in chiave \emph{embedded}, ovvero in condizioni di scarsa memoria disponibile e in oggetti che hanno esclusivamente una o poche funzionalità.
+
+Il crittosistema, sviluppato in linguaggio C, non fa uso di librerie esterne oltre a quelle standard. Questo è importante perché permette di avere l'esatta computazione del codice, in modo da poterne frammentare l'esecuzione nel caso in cui venisse eseguito su un dispositivo embedded.
+
+Le varie funzioni sono state progettate per ottenere un giusto compromesso tra la complessità computazionale e l'utilizzo di memoria, per cui alcune procedure, pur presentando complessità non ottimali, si rivelano estremamente adatte al problema esposto. È il caso, ad esempio, della moltiplicazione, presentata nei capitoli sucessivi, caratterizzata da una complessità quadratica, molto più degli algoritmi più recenti, a partire da quello di Karatsuba, passando per la procedura di Toom-Cook e per l'algoritmo di Sch\"onhage-Strassen, fino alla trasformata di F\"urer. 
+
+In relazione alla complessità computazionale è il tempo. Dopo numerosi tentativi, manipolazioni e ristrutturazioni del codice, si è riusciti a far svolgere al calcolatore le operazioni per la generazione delle chiavi cifrate in tempi pressoché ragionevoli, come illustrato nei capitoli a seguire.
+

@@ -1,0 +1,353 @@
+%!TEX root = ../dissertation.tex
+%\begin{savequote}[75mm]
+%Nulla facilisi. In vel sem. Morbi id urna in diam dignissim feugiat. Proin molestie tortor eu velit. Aliquam erat volutpat. Nullam ultrices, diam tempus vulputate egestas, eros pede varius leo.
+%\qauthor{Quoteauthor Lastname}
+%\end{savequote}
+
+\chapter{Test di Primalità}
+
+\newthought{Nell'implementazione di un crittosistema RSA} è necessario generare due numeri primi molto grandi. In sostanza, vengono generati casualmente dei numeri interi dispari e viene testata la loro primalità grazie ad un procedimento sviluppato da \emph{Robert M. Solovay} e \emph{Volker Strassen}, un algoritmo probabilistico il cui tempo di esecuzione è polinomiale.
+
+Per comprendere al meglio i passaggi che stanno dietro l'esecuzione del test, è necessario introdurre alcune nozioni di Teoria dei Numeri.
+
+La prima definizione che si incontra è quella di \emph{residuo quadratico}, un concetto fondamentale nei crittosistemi a chiave asimmetrica in quanto la loro teoria è basata sulla matematica modulare e sulle rispettive proprietà.
+
+\begin{definizione}[Residuo quadratico]
+	Un numero intero $q$ è detto residuo quadratico modulo $p$ se esiste un intero $x$ tale che 
+	\begin{equation*}
+		x^2 \equiv q \pmod{p}
+	\end{equation*}
+	In caso contrario, $q$ è detto residuo non quadratico.
+\end{definizione}
+
+A seguire, la definizione del \emph{simbolo di Legendre}, che viene utilizzato per determinare se un numero è o meno primo.
+
+\begin{definizione}[Simbolo di Legendre]
+	Siano $p$ un numero primo ed $a$ un intero, allora:
+	\begin{equation*}
+		\left( \frac{a}{p} \right) =
+		\begin{cases}
+			0 &\text{se } p \text{ divide } a \\
+			-1 &\text{se } a \text{ è un residuo quadratico modulo } p\\
+			1 &\text{se } a \text{ non è un residuo quadratico modulo } p
+		\end{cases}
+	\end{equation*}
+	$\left( \frac{a}{p} \right)$ è detto simbolo di Legendre.
+\end{definizione}
+
+Per poter effettuare il test, verrà però usato il \emph{simbolo di Jacobi}, una generalizzazione del simbolo di Legendre, valida per un qualsiasi numero dispari.
+
+\begin{teorema}[Teorema di Eulero]
+	\label{th:Eulero}
+	Per il Simbolo di Legendre vale la seguente relazione:
+	\begin{equation*}
+		\left( \frac{a}{p} \right) \equiv_p a^{\frac{p-1}{2}}
+	\end{equation*}
+\end{teorema}
+
+\begin{proof}
+	Se $p$ divide $a$, l'asserto segue banalmente.\\
+	Supponiamo quindi che $a$ sia un residuo quadratico modulo $p$. Troviamo un numero $k$ tale che \[ k^2 \equiv a \pmod{p} \]
+	Allora, per il piccolo teorema di Fermat,
+		\begin{align*}
+			a^{(p-1) / 2} &\equiv k^{(p-1)} \pmod{p}\\
+			&\equiv 1 \pmod{p}
+		\end{align*}
+	Viceversa, assumiamo che \[ a^{(p-1) / 2} \equiv 1 \pmod{p} \]
+	Sia $\alpha$ un elemento primitivo modulo $p$, in modo tale che $a = \alpha^i$.
+	Sostituendo, si ottiene: \[ \alpha^{i \cdot (p-1) / 2} \equiv 1 \pmod{p} \]
+	Per il piccolo teorema di Fermat, $(p - 1)$ divide $i \cdot (p - 1)/2$, perciò $i$ deve essere pari.\\
+	Sia $k \equiv \alpha^{i/2} \pmod{p}$. Abbiamo infine che \[ k^2 = \alpha^i \equiv a \pmod{p} \]
+\end{proof}
+
+Il criterio di Eulero è correlato alla legge di reciprocità quadratica ed è utilizzato nella definizione degli pseudoprimi di Eulero-Jacobi.
+
+\begin{definizione}[Simbolo di Jacobi]
+	Siano $n$ un numero intero dispari ed $a$ un intero. Se $n = \prod_{i = 1}^{k} p_i^{\alpha_i}$, $p_i \in \mathbb{P}$ e $\alpha_i \in \mathbb{N}$, allora si definisce Simbolo di Jacobi $\left( \frac{a}{n} \right)$ il prodotto dei Simboli di Legendre dei fattori primi di $n$: \[ \left( \frac{a}{p} \right) = \displaystyle\prod_{i=1}^{k} \left( \frac{a}{p_i} \right)^{\alpha_i} \]
+\end{definizione}
+
+Si noti che $\left( \frac{a}{n} \right) = 1$, con $n$ composto, non implica che $a$ sia un residuo quadratico modulo $n$: questo accade se e solo se $a$ è residuo quadratico modulo ogni primo che divide $n$. Ne è un esempio $\left( \frac{2}{15} \right)$, dove il calcolo del Simbolo di Jacobi restituisce $\left( \frac{2}{15} \right)= \left( \frac{2}{3} \right) \cdot \left( \frac{2}{5} \right) = \left( -1 \right) \cdot \left( -1 \right) = 1$, mentre non esiste un intero $x$ tale che $x^2 \equiv_{15} 2$.% o altrimenti x^2 == 2 (mod 15)
+
+\begin{algorithm}[H]
+	\caption{jacobi}
+	\label{alg:jacobi}
+	\DontPrintSemicolon
+	\KwIn{$\vec{a}, \vec{n}$}
+	\KwOut{$J \gets \left( \frac{a}{n} \right)$}
+	\Begin{
+		\If{$\vec{a} = 0$}{
+			\KwRet{$0$}\;
+		}
+		
+		\If{$\vec{a} = 1$}{
+			\KwRet{$1$}\;
+		}
+		
+		\tcc{Scrivere $\vec{a}$ come $2^e \cdot \vec{A}$}
+		%\tcc{Write $\vec{a}$ as $2^e \cdot \vec{A}$}
+		%$\vec{A} \gets \vec{a}$\;
+		%$e \gets 0$\;
+		%\While{$\vec{A} \equiv 0 \pmod{2}$}{
+		%	$e \gets e + 1$\;
+		%	Spostare il vettore $\vec{A}$ a destra di $1$ bit.\;
+		%}
+		
+		\If{$e \equiv 0 \pmod{2}$}{
+			$s \gets 1$\;
+		}\Else{
+			\If{$\vec{n} \equiv 1 \pmod{8}$ or $\vec{n} \equiv 7 \pmod{8}$}{
+				$s \gets +1$\;
+			}
+			\If{$\vec{n} \equiv 3 \pmod{8}$ or $\vec{n} \equiv 5 \pmod{8}$}{
+				$s \gets -1$\;
+			}
+		}
+		
+		\If{$\vec{n} \equiv 3 \pmod{4}$ and $\vec{A} \equiv 3 \pmod{4}$}{
+			$s \gets -s$\;
+		}
+		
+		$\vec{N} \gets \vec{n} \bmod \vec{A}$\;
+		
+		\If{$\vec{A} = 1$}{
+			\KwRet{$s$}\;
+		}
+		
+		\KwRet{$s \cdot \text{jacobi}\left( \vec{N}, \vec{A} \right)$}\;
+	}
+\end{algorithm}
+
+\clearpage
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, backgroundcolor=\color{bgCode}]
+int rsa_jac(struct bn* a, struct bn* n) {
+    if ( bignum_is_zero(a) ) {
+        return 0;
+    }
+    
+    if ( bignum_cmp_short(a, 1) == EQUAL ) {
+        return 1;
+    }
+    
+    WORD_TYPE e = 0;
+    struct bn a1, n1;
+    bignum_assign(&a1, a);
+    
+    for (e = 0; !(a1.num[0] & 0x01); e++) {
+        _rshift_one_bit(&a1);
+    }
+    
+    int s;
+    if ( e % 2 == 0 ) {
+        s = 1;
+    } else {
+        if ( ((n->num[0] & 0x07) == 0x01) ||
+             || ((n->num[0] & 0x07) == 0x07) ) {
+            s = 1;
+        } else {
+        s = -1;
+        }
+    }
+    
+    if ( ((n->num[0] & 0x03) == 0x03) && 
+          && ((a1.num[0] & 0x03) == 0x03) ) {
+        s = -s;
+    }
+    
+    if ( bignum_cmp_short(&a1, 1) != 0 ) {
+        bignum_mod(n, &a1, &n1);
+        s = s * rsa_jac(&n1, &a1);
+    }
+    
+    return s;
+}
+\end{lstlisting}
+
+%
+%
+\section{Pseudoprimi}
+%
+%
+
+%\begin{definizione}[Pseudoprimo]
+%	Siano $n$ un intero dispari e $b$ un intero tale che $gcd(b, n) = 1$. Se \[ b^{n-1} \equiv 1 \pmod{n} \] allora $n$ si dice pseudoprimo %rispetto alla base $b$.
+%\end{definizione}
+
+\begin{definizione}[Pseoudoprimo di Eulero]
+	Siano $n$ un intero composto dispari e $b$ un intero tale che $gcd(b, n) = 1$. Allora $n$ si dice pseudoprimo di Eulero rispetto alla base $b$ se \[ b^{ \frac{n-1}{2} } \equiv \left( \frac{b}{n} \right) \pmod{n} \] dove $\left( \frac{b}{n} \right)$ è il simbolo di Jacobi.
+\end{definizione}
+
+Si noti che ogni numero primo $n$ ($\neq 2$) soddisfa quest'ultima definizione in virtù del teorema~\ref{th:Eulero}.
+
+Nella definizione di pseudoprimo di Eulero, si incontra la funzione $gcd(b, n)$, ovvero quella funzione che determina il \emph{massimo comun divisore}. Per poterlo calcolare, si ricorre all'algoritmo di Euclide.
+
+\begin{algorithm}[H]
+	\caption{gcd}
+	\label{alg:gcd}
+	\DontPrintSemicolon
+	\KwIn{$\vec{a}, \vec{b}$}
+	\KwOut{$\vec{c} \gets gcd(\vec{a}, \vec{b})$}
+	\Begin{
+		\While{$\vec{b} \neq 0$}{
+			$\vec{r} \gets \vec{a} \bmod \vec{b}$\;
+			$\vec{a} \gets \vec{b}$\;
+			$\vec{b} \gets \vec{r}$\;
+		}
+		
+		\KwRet{$\vec{a}$}\;
+	}
+\end{algorithm}
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, backgroundcolor=\color{bgCode}]
+void rsa_gcd(struct bn* a, struct bn* b, struct bn* c) {
+    struct bn newA, newB, tmp;
+    
+    bignum_assign(&newA, a);
+    bignum_assign(&newB, b);
+    
+    while ( !bignum_is_zero(&newB) ) {
+        bignum_mod(&newA, &newB, &tmp);
+        bignum_assign(&newA, &newB);
+        bignum_assign(&newB, &tmp);
+    }
+    
+    bignum_assign(c, &newA);
+}
+\end{lstlisting}
+
+L'algoritmo, con complessità polinomiale, serve a trovare il massimo comun divisore tra due numeri, che ricordiamo essere molto grandi (circa $1024$ bits). L'innovazione data dallo scopritore di questo procedimento\footnote{Sebbene porti il nome di Euclide (IV secolo a.C. - III secolo a.C.), l'algoritmo era conosciuto anche nel 375 a.C. e probabilmente anche 200 anni prima.} è il fatto di non trovare il risultato mediante fattorizzazione dei numeri, ma tramite il resto della loro divisione.
+
+Troveremo, nei prossimi capitoli, una generalizzazione dell'\emph{algoritmo di Euclide} quando tratteremo della generazione delle chiavi per la crittografia, in particolare per la generazione della chiave di decrittazione.\clearpage
+
+%
+%
+\section{Test di primalità}
+%
+%
+
+Un test di primalità è un algoritmo che ha lo scopo di determinare se un dato numero intero è primo. Non va confuso con gli algoritmi di fattorizzazione, che invece hanno lo scopo di determinare i fattori primi di un numero.
+
+Attualmente, i test di primalità più efficienti sono probabilistici, nel senso che danno una risposta certa solo quando negano la primalità di un numero, mentre nel caso di risposte confermative, assicurano soltanto un limite inferiore alla probabilità che tale numero sia primo. La probabilità di errore dei test può essere però ridotta eseguendo l'algoritmo un certo numero di volte.
+
+Tra le diverse procedure disponibili, per questo crittosistema è stato sviluppato l'algoritmo di Solovay-Strassen, sviluppato nel 1977. Essenzialmente, il test è basato sugli pseudoprimi di Eulero, visti nelle pagine precedenti.
+
+\begin{algorithm}[H]
+	\caption{checkPrimality}
+	\label{alg:checkPrimality}
+	\DontPrintSemicolon
+	\KwIn{$\vec{n}$}
+	\KwOut{``$n$ è primo.'' oppure ``$n$ è un intero composto.''}
+	\Begin{
+		Si scelga un intero $a$ compreso tra $1$ e $n-1$\;
+		$x \gets \left( \frac{a}{n} \right)$\;
+
+		\If{$x = 0$}{
+			\KwRet{``$n$ è un intero composto.''}\;
+		}
+		
+		$y \gets a^{(n-1)/2} \bmod n$\;
+		
+		\If{$x \equiv y \pmod{n}$}{
+			\KwRet{``$n$ è primo.''}\;
+		}
+		\KwRet{``$n$ è un intero composto.''}\;
+	}
+\end{algorithm}
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, backgroundcolor=\color{bgCode}]
+int rsa_check_prime(struct bn* n) {
+    struct bn a;
+    rsa_random_under(&a, n);
+    
+    struct bn ret_gcd;
+    rsa_gcd(n, &a, &ret_gcd);
+    if ( bignum_cmp_short(&ret_gcd, 1) != EQUAL ) {
+        return COMPOSITE;
+    }
+
+    struct bn ret_jac;
+    switch ( rsa_jac(&a, n) ) {
+        case -1:
+            bignum_usub_short(n, 1, &ret_jac);
+            break;
+        
+        case 0:
+            return COMPOSITE;
+            break;
+        
+        case 1:
+            bignum_from_word(&ret_jac, 0, 1);
+            break;
+        
+        default:
+            return COMPOSITE;
+            break;
+    }
+
+    struct bn ret_jac_eul, exp;
+    bignum_usub_short(n, 1, &exp);
+    _rshift_one_bit(&exp);
+    rsa_pow_mod(&a, &exp, n, &ret_jac_eul);
+
+    if ( bignum_cmp(&ret_jac, &ret_jac_eul) != EQUAL ) {
+        return COMPOSITE;
+    }
+        return PRIME;
+    }
+}
+\end{lstlisting}
+
+Dall'analisi dell'algoritmo appena visto, segue che l'output ``$n$ è un intero composto'' è sempre corretto, mentre la probabilità che l'output ``$n$ è primo'' sia scorretto è minore o uguale a $1/2$.
+
+È lecito, a questo punto, domandarsi quanti numeri interi casuali è necessario testare per trovarne uno che sia primo. 
+
+\begin{teorema}[Teorema dei numeri primi]
+	Sia $x$ un numero reale positivo e si definisca la funzione $\pi\left( x \right)$ come il numero di primi minori o uguali a $x$.
+	Allora \[ \pi\left( x \right) \simeq \frac{x}{\ln x} \]
+\end{teorema}
+
+Pertanto la probabilità che un numero $p$ sia primo è $1/\ln x$. Se $p$ è di $1024bit$, come consigliato fino al 2030, allora la probabilità è pari a 
+\begin{align*}
+	\frac{1}{\ln 2^{1024}} &\simeq \frac{1}{\ln e^{710}} \\
+	&\simeq \frac{1}{710} 
+\end{align*}
+In media, quindi, viene trovato un numero primo di lunghezza $1kbit$ ogni 710 interi casuali.
+
+Tenendo conto, però, che i numeri testati sono esclusivamente dispari, tale probabilità viene raddoppiata, per cui è lecito supporre che venga trovato un numero primo ogni 355 numeri generati casualmente dall'algoritmo.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

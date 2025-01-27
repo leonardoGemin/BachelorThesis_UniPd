@@ -1,0 +1,362 @@
+%!TEX root = ../dissertation.tex
+%\begin{savequote}[75mm]
+%Nulla facilisi. In vel sem. Morbi id urna in diam dignissim feugiat. Proin molestie tortor eu velit. Aliquam erat volutpat. Nullam ultrices, diam tempus vulputate egestas, eros pede varius leo.
+%\qauthor{Quoteauthor Lastname}
+%\end{savequote}
+
+\chapter{Generazione delle chiavi}
+
+\newthought{La generazione della coppia di chiavi} parte dalla scelta di due numeri primi casuali molto grandi, $p$ e $q$. Essi vanno scelti con il testi di primalità visto nel capitolo precedente. Il motivo della richiesta che tali numeri siano molto grandi, risiede nella difficoltà di fattorizzare il loro prodotto $n = p \cdot q$, in quanto parte della chiave pubblica\footnote{Si ricorda che la chiave pubblica è composta dalla coppia $(n, e)$, mentre la coppia $(n, d)$ identifica la chiave privata.}. Come quanto detto nel capitolo 2, ad oggi la raccomandazione è di utilizzare chiavi di lunghezza $2kbit$. Per essere più precisi, la lunghezza della chiave si riferisce al prodotto $n$, per cui sostanzialmente, $p$ e $q$ devono essere lunghi la metà di $n$, ovvero $1kbit$.
+
+Per ottimizzare la ricerca delle chiavi $e$ e $d$, viene effettuato un procedimento diverso da quello illustrato nel secondo capitolo. Per prima cosa viene scelto un numero $e$ primo. Non è necessario che tale numero sia grande. Solitamente viene scelto un numero appartenente al seguente insieme di numeri: ${3, 5, 17, 257, 65537}$. Questi particolari valori vengono scelti perché rendono più veloce l'operazione di esponenziazione modulare, avendo solo due bit di valore $1$ nella loro rappesentazione binaria.
+
+Tali numeri sono i primi cinque numeri di Fermat, indicati come $F_0, \dotsc, F_4$, dove \[ F_k = 2^{2^k} + 1 \] Fermat credeva, erroneamente, che tutti i numeri della forma indicata fossero primi. Nel 1732, Eulero dimostrò che Fermat si sbagliava, fornendo la fattorizzazione di $F_5$: \[ F_5 = 4294967297 = 641 \cdot 6700417 \]
+
+La scelta più usuale per $e$ è $F_4 = 65537 = 0\text{x}10001$. Inoltre, avendo scelto $e$, è più semplice verificare le uguaglianze
+\begin{equation}
+	\label{eqn:sistemaE}
+	\begin{cases}
+		gcd(e, p - 1) = 1 \\
+		gcd(e, q - 1) = 1 
+	\end{cases}
+\end{equation}
+durante la generazione dei numeri primi. Nel caso in cui $p$ o $q$ falliscano questa verifica, possono essere rifiutati e la procedura viene ricominciata.
+
+Viene quindi calcolata la funzione \emph{toziente} \eqref{eqn:toziente}, \[ \phi(n) = (p-1) \cdot (q-1) \]
+
+Si noti che la verifica del sistema \eqref{eqn:sistemaE} implica la verifica anche di \[ gcd(e, \phi(n) ) = 1 \]
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, backgroundcolor=\color{bgCode}]
+int generateRSAPrime(struct bn * p, size_t nbits, WORD_TYPE e,
+    size_t ntests, const unsigned char *seed, size_t seedlen) {
+    /* Create a prime p such that gcd(p-1, e) = 1.
+     * Returns # prime tests carried out or -1 if failed.
+     * Sets the TWO highest bits to ensure that the 
+     * product pq will always have its high bit set.
+     * e MUST be a prime > 2.
+     * This function assumes that e is prime so we can
+     * do the less expensive test p mod e != 1 instead
+     * of gcd(p-1, e) == 1.
+     */
+    
+    struct bn u;
+    size_t i, j, iloop, maxloops, maxodd;
+    int done, overflow, failedtrial;
+    int count = 0;
+    WORD_TYPE r[N_SMALL_PRIMES];
+    
+    // Create a temp
+    bignum_init(&u);
+    
+    maxodd = nbits * 100;
+    maxloops = 5;
+    
+    done = 0;
+    for (iloop = 0; !done && iloop < maxloops; iloop++) {
+        // Set candidate n0 as random odd number
+        rsa_random(p, nbits, seed);
+        
+        // Set two highest and low bits
+        rsa_set_bit(p, nbits - 1);
+        rsa_set_bit(p, nbits - 2);
+        rsa_set_bit(p, 0);
+        
+        // To improve trial division, compute table
+        // R[q] = n0 mod q for each odd prime q <= B
+        for (i = 0; i < N_SMALL_PRIMES; i++) {
+            bignum_mod_short(p, SMALL_PRIMES[i], &u);
+            r[i] = u.num[0];
+        }
+        
+        done = overflow = 0;
+        // Try every odd number n0, n0+2, n0+4, ...
+        // until we succeed
+        for (j = 0; j < maxodd; j++, bignum_dbl_inc(p)) {
+            count++;
+            
+            // Each time 2 is added to the current candidate
+            // update table R[q] = (R[q] + 2) mod q
+            if (j > 0) {
+                for (i = 0; i < N_SMALL_PRIMES; i++) {
+                    r[i] = (r[i] + 2) % SMALL_PRIMES[i];
+                }
+            }
+            
+            // Candidate passes the trial division stage if
+            // and only if NONE of the R[q] values equal zero
+            failedtrial = 0;
+            for (i = 0; i < N_SMALL_PRIMES; i++) {
+                if (r[i] == 0) {
+                    failedtrial = 1;
+                    break;
+                }
+            }
+            if (failedtrial) {
+                continue;
+            }
+            
+            // If p mod e = 1 then gcd(p, e) > 1, so try again
+            bignum_mod_short(p, e, &u);
+            if (bignum_cmp_short(&u, 1) == EQUAL) {
+                continue;
+            }
+            
+            // Do expensive primality test
+            if (rsa_check_prime(p) == PRIME ) {
+                done = 1;
+                break;
+            }
+            
+        }
+    }
+    
+    
+    printf("\n");
+    return (done ? count : -1);
+}
+\end{lstlisting}
+
+%
+%
+\section{Calcolo della chiave di Decrittazione}
+\label{sec:chiaveDecrittazione}
+%
+%
+
+Pero ottenere $d$, ovvero la prima variabile della chiave privata, è necessario utilizzare l'estensione dell'algoritmo di Euclide, visto in precedenza per il calcolo del massimo comun divisore. La computazione dell'algoritmo richiede due parametri in ingresso, ovvero $\phi(n)$ ed $e$, e porta ad un'unica variabile di uscita, denominata \emph{inverso moltiplicativo}.
+
+Il calcolo di $gcd(\phi(n), e)$ viene effettuato calcolando una serie di zeri $x_0, x_1, \dotsc$, dove
+\begin{align*}
+	x_0 &= \phi(n) \\
+	x_1 &= e \\
+	x_i &= x_{i-2} \bmod x_{i-1}
+\end{align*}
+
+La condizione che termina il ciclo iterativo è il ritrovamento di un $x_k = 0$. Il massimo comun divisore sarà quindi $gcd(\phi(n), e) = x_{k-1}$.
+
+L'estensione dell'algoritmo prevede poi, che per ogni $x_i$ vengano calcolati i coefficienti $a_i$ e $b_i$ tali che \[ x_i = a_i \cdot x_0 + b_i \cdot x_1 \]
+
+Se $x_{k-1} = 1$, allora $b_{k-1}$ è l'inverso moltiplicativo di $x_1 \pmod{x_0}$.
+
+L'algoritmo implementato nel crittosistema, però, segue la procedura descritta da D.~Knuth nell'\emph{algoritmo X}, più efficiente a livello computazionale.
+
+Dati due interi non negativi $\vec{u}$ e $\vec{v}$, questo algoritmo determina un vettore $\left( \vec{u_1}, \vec{u_2}, \vec{u_3} \right)$ tale che $\vec{u}\cdot\vec{u_1} +  \vec{v}\cdot\vec{u_2} = \vec{u_3} = gcd(\vec{u}, \vec{v})$. La computazione richiede l'ausilio di due vettori $\left( \vec{v_1}, \vec{v_2}, \vec{v_3} \right)$ e $\left( \vec{t_1}, \vec{t_2}, \vec{t_3} \right)$, che saranno manipolati in modo tale che le equazioni
+\begin{gather*}
+	\vec{u}\cdot\vec{t_1} +  \vec{v}\cdot\vec{t_2} = \vec{t_3} \\
+	\vec{u}\cdot\vec{u_1} +  \vec{v}\cdot\vec{u_2} = \vec{u_3} \\
+	\vec{u}\cdot\vec{v_1} +  \vec{v}\cdot\vec{v_2} = \vec{v_3}
+\end{gather*}
+rimangano vere per tutto il calcolo dell'algoritmo.
+
+L'algoritmo, in realtà, ignora i vettori $\vec{u_2}$, $\vec{v_2}$ e $\vec{t_2}$ e attua dei meccanismi per prevenire i numeri negativi. Nel caso in cui l'inverso moltiplicativo non venga trovato, la procedura genera un errore.
+
+\begin{algorithm}[H]
+	\caption{inversoMoltiplicativo}
+	\label{alg:inversoMoltiplicativo}
+	\DontPrintSemicolon
+	\KwIn{$\vec{u}, \vec{v}$}
+	\KwOut{$\vec{inv}$}
+	\Begin{
+		$\vec{u_1} \gets 1$\;
+		$\vec{u_3} \gets \vec{u}$\;
+		$\vec{v_1} \gets 0$\;
+		$\vec{v_3} \gets \vec{v}$\;
+		$\vec{t_1} \gets 0$\;
+		$\vec{t_3} \gets 0$\;
+		
+		$bIterations \gets 1$\;
+		
+		\While{$\vec{v_3} \neq 0$}{
+			$\vec{q} \gets \vec{u_3} / \vec{v_3}$\;
+			$\vec{t3} \gets \vec{u_3} \bmod \vec{v_3}$\;
+			
+			$\vec{w} \gets \vec{q} \cdot \vec{v_1}$\;
+			
+			$\vec{t_1} \gets \vec{u_1} + \vec{w}$\;
+			
+			$\vec{u_1} \gets \vec{v_1}$\;
+			$\vec{v_1} \gets \vec{t_1}$\;
+			$\vec{u_3} \gets \vec{v_3}$\;
+			$\vec{v_3} \gets \vec{t_3}$\;
+			
+			$bIterations \gets -bIterations$\;
+		}
+		
+		\If{$bIterations < 0$}{
+			$\vec{inv} \gets \vec{v} - \vec{u_1}$\;
+		}\Else{
+			$\vec{inv} \gets \vec{u_1}$\;
+		}
+		
+		\If{$\vec{u_3} \neq 1$}{
+			\KwRet{``Errore.''}\;
+		}
+		
+		\KwRet{$\vec{inv}$}\;
+	}
+\end{algorithm}
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, backgroundcolor=\color{bgCode}]
+int rsa_mod_inv(struct bn* inv, struct bn* u, struct bn* v) {	
+    int bIterations;
+    int result;
+    
+    struct bn u1, u3, v1, v3, t1, t3, q, w;
+    bignum_init(&u1);
+    bignum_init(&u3);
+    bignum_init(&v1);
+    bignum_init(&v3);
+    bignum_init(&t1);
+    bignum_init(&t3);
+    bignum_init(&q);
+    bignum_init(&w);
+    
+    
+    /*
+     * Step X1: Initialise
+     */
+    u1.num[0] = 0x01;
+    bignum_assign(&u3, u);
+    bignum_assign(&v3, v);
+
+    bIterations = 1;	/* Remember odd/even iterations */
+    
+    
+    /*
+     * Step X2: Loop
+     */
+    while (!bignum_is_zero(&v3)) {
+        /*
+         * Step X3: Divide & Subtract
+         */
+        bignum_udiv(&u3, &v3, &q, &t3);
+        bignum_umul(&q, &v1, &w);
+        bignum_add(&u1, &w, &t1);
+        
+        
+        // Swap u1 = v1; v1 = t1; u3 = v3; v3 = t3
+        bignum_assign(&u1, &v1);
+        bignum_assign(&v1, &t1);
+        bignum_assign(&u3, &v3);
+        bignum_assign(&v3, &t3);
+        
+        bIterations = -bIterations;
+    }
+    
+    if (bIterations < 0)
+        bignum_sub(v, &u1, inv);
+    else
+        bignum_assign(inv, &u1);
+    
+    // Make sure u3 = gcd(u,v) == 1
+    if (bignum_cmp_short(&u3, 1) != EQUAL) {
+        result = 1;
+        bignum_init(inv);
+    } else
+        result = 0;
+
+
+    return result;
+}
+\end{lstlisting}
+\clearpage
+
+%
+%
+\section{Procedura di crittazione e/o decrittazione}
+%
+%
+
+La procedura necessaria a decrittare un messaggio è identica a quella per criptarlo. Dal momento che l'equazione che restituisce il messaggio crittato $C \equiv M^e \pmod{n}$ è simile a quella per la decrittazione $D(C) \equiv C^d \pmod{n}$, è sufficente un unico algoritmo per effettuare entrambe le operazioni.
+
+Il calcolo di $C \equiv M^e \pmod{n}$ necessita al più di $2\log_2 e$ moltiplicazioni e di $2\log_2 e$ divisioni utilizzando la seguente procedura, denominata \emph{esponenziazione per moltiplicazioni e quadrati ripetuti}.
+
+\begin{algorithm}[H]
+	\caption{powMod}
+	\label{alg:powMod}
+	\DontPrintSemicolon
+	\KwIn{$\vec{b}, \vec{e}, \vec{n}$}
+	\KwOut{$\vec{c}$}
+	\Begin{
+		$\vec{base} \gets \vec{b} \bmod \vec{n}$\;
+		\If{$\vec{base} = 0$}{
+			\KwRet{$\vec{c} \gets 0$}\;
+		}
+		
+		$\vec{exp} \gets \vec{e}$\;
+		$\vec{c} \gets 1$\;
+		
+		\While{$\vec{exp} \neq 0$}{
+			\If{$\vec{exp} \bmod 2 \neq 0$}{
+				$\vec{c} \gets \left( \vec{c} \cdot \vec{base} \right) \bmod \vec{n}$\;
+			}
+			
+			$\vec{base} \gets \left( \vec{base} \cdot \vec{base} \right) \bmod \vec{n}$\;
+			Spostare $\vec{exp}$ a destra di 1bit\;
+		}
+		
+		\KwRet{$\vec{c}$}\;
+	}
+\end{algorithm}
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, backgroundcolor=\color{bgCode}]
+void rsa_pow_mod(struct bn* b, struct bn* e, struct bn* n,
+    struct bn* c) {
+    struct bn base, exp, tmp;
+    int i, iteration;
+    bignum_init(&base);
+    bignum_init(&exp);
+    bignum_init(&tmp);
+    
+    bignum_mod(b, n, &base);
+    if ( bignum_is_zero(&base) ) {
+        bignum_init(c);
+        return;
+    }
+    
+    bignum_assign(&exp, e);
+    bignum_from_word(c, 0, 1);
+    
+    iteration = rsa_sizeof(&exp);
+    for (i = 0; i < iteration; i++) {
+        if ( (exp.num[i/WORD_SIZE] >> (i%WORD_SIZE)) & 0x01 ) {
+            bignum_mul(c, &base, &tmp);
+            bignum_mod(&tmp, n, c);
+        }
+        
+        bignum_mul(&base, &base, &tmp);
+        bignum_mod(&tmp, n, &base);
+    }
+}
+\end{lstlisting}
+
+La procedura implementata è stata ulteriormente migliorata dal punto di vista computazionale eliminando il ciclo \emph{while} e sostituendolo con un ciclo \emph{for}. La condizione di termine del ciclo è il raggiungimento, da parte della variabile contatore, della lunghezza effettiva\footnote{Con lunghezza effettiva si intende il numero di bit meno significativi dopo il primo bit più significativo diverso da $0$.} del vettore $\vec{exp}$. Così facendo, si evita di controllare, ad ogni ciclo iterativo, la non nullità del vettore $\vec{exp}$.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
